@@ -1,0 +1,12 @@
+# v1 tiny-2D configuration (walking skeleton)
+canvas:
+  width: 256
+  height: 256
+
+sampler:
+  min_primitives: 1
+  max_primitives: 5
+  max_arc_sweep_deg: 270   # arcs beyond this become a Circle or are split (keeps bulge bounded)
+
+primitives:
+  types: [line, arc, circle, bezier]   # bezier present in schema/metric; minimal in v1 sampler
