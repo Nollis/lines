@@ -151,6 +151,7 @@ def train(cfg: TrainConfig, train_dir: Path, test_dir: Path, out_dir: Path,
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--canvas-side", type=int, default=64)
     ap.add_argument("--train-dir", default="data/train64")
     ap.add_argument("--test-dir", default="data/test64")
     ap.add_argument("--out-dir", default="checkpoints/v1")
@@ -162,7 +163,8 @@ def main():
     ap.add_argument("--render-weight", type=float, default=1.0)
     ap.add_argument("--render-canvas-size", type=int, default=32)
     args = ap.parse_args()
-    cfg = TrainConfig(epochs=args.epochs,
+    cfg = TrainConfig(canvas_side=args.canvas_side,
+                      epochs=args.epochs,
                       train_samples=args.train_samples,
                       test_samples=args.test_samples,
                       lr=args.lr,
