@@ -78,19 +78,31 @@ def write_dataset(
 class Dataset:
     """Reload a dataset written by :func:`write_dataset`."""
 
-    def __init__(self, root):
+    def __init__(self, root, max_samples: int | None = None, cache_images: bool = True):
         self.root = Path(root)
         self.manifest = json.loads((self.root / "manifest.json").read_text())
         self.samples = self.manifest["samples"]
+        if max_samples is not None:
+            self.samples = self.samples[:max_samples]
         self.canvas = self.manifest["canvas"]
+
+        self.cache_images = cache_images
+        self.cached_images = {}
+        if self.cache_images:
+            for idx, entry in enumerate(self.samples):
+                img = np.asarray(Image.open(self.root / entry["image"]).convert("L"), dtype=np.uint8)
+                self.cached_images[idx] = img
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, i: int):
-        entry = self.samples[i]
-        img = np.asarray(Image.open(self.root / entry["image"]).convert("L"), dtype=np.uint8)
-        pset = PrimitiveSet.from_dict({"primitives": entry["primitives"]})
+        if self.cache_images and i in self.cached_images:
+            img = self.cached_images[i]
+        else:
+            entry = self.samples[i]
+            img = np.asarray(Image.open(self.root / entry["image"]).convert("L"), dtype=np.uint8)
+        pset = PrimitiveSet.from_dict({"primitives": self.samples[i]["primitives"]})
         return img, pset
 
     def line_width(self, i: int) -> float:
@@ -98,3 +110,4 @@ class Dataset:
 
     def supersample(self, i: int) -> int:
         return self.samples[i]["supersample"]
+
