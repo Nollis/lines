@@ -25,6 +25,8 @@ def main():
     ap.add_argument("--test-dir", default="data/test64")
     ap.add_argument("--n", type=int, default=9)
     ap.add_argument("--out", default="data/preview/predictions.png")
+    ap.add_argument("--none-threshold", type=float, default=0.85)
+    ap.add_argument("--refine-distance", type=float, default=6.0)
     args = ap.parse_args()
 
     ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
@@ -36,7 +38,8 @@ def main():
         feature_size=required_feature_size(cfg["canvas_side"]),
     )
     model.load_state_dict(ckpt["model"])
-    predictor = ModelPredictor(model, canvas)
+    predictor = ModelPredictor(model, canvas, none_prob_threshold=args.none_threshold,
+                               refine_distance=args.refine_distance)
 
     ds = Dataset(args.test_dir)
     S = canvas.width
