@@ -25,6 +25,7 @@ from lines.datagen.sampler2d import Canvas
 from lines.eval.harness import run_predictor
 from lines.models.set_predictor import load_set_predictor
 from lines.train.predictor import ModelPredictor
+from lines.refine.diffvg_refine import RefiningPredictor
 
 # Deterministic split: a high seed so it never collides with training data.
 _TEST_SEED = 900_000
@@ -42,13 +43,33 @@ def ensure_test_split(canvas_side: int, n_samples: int = _TEST_SAMPLES,
     return split
 
 
-def score_checkpoint(checkpoint_path: Path, root: str = "data") -> dict:
+def build_predictor(model, canvas, none_threshold: float = 0.85,
+                    refine: str = "algebraic", diffvg_steps: int = 30,
+                    diffvg_render_size: int = 96):
+    """Construct an inference predictor with the chosen refinement strategy.
+
+    ``refine``: ``none`` (raw decode), ``algebraic`` (local least-squares
+    re-fit, fast), or ``diffvg`` (differentiable-render snapping, slow but the
+    most precise -- the only config that clears baseline at 128).
+    """
+    if refine == "diffvg":
+        base = ModelPredictor(model, canvas, none_prob_threshold=none_threshold,
+                              refine_distance=None)
+        return RefiningPredictor(base, canvas, steps=diffvg_steps,
+                                 render_size=diffvg_render_size)
+    refine_distance = 6.0 if refine == "algebraic" else None
+    return ModelPredictor(model, canvas, none_prob_threshold=none_threshold,
+                          refine_distance=refine_distance)
+
+
+def score_checkpoint(checkpoint_path: Path, root: str = "data",
+                     none_threshold: float = 0.85, refine: str = "algebraic") -> dict:
     model, cfg = load_set_predictor(checkpoint_path)
     canvas_side = int(cfg.get("canvas_side", 64))
     canvas = Canvas(canvas_side, canvas_side)
     split = ensure_test_split(canvas_side, root=root)
     ds = Dataset(split)
-    predictor = ModelPredictor(model, canvas)
+    predictor = build_predictor(model, canvas, none_threshold=none_threshold, refine=refine)
     t0 = time.time()
     report = run_predictor(predictor, ds, canvas)
     elapsed = time.time() - t0
@@ -58,6 +79,8 @@ def score_checkpoint(checkpoint_path: Path, root: str = "data") -> dict:
         "name": Path(checkpoint_path).parent.name,
         "canvas_side": canvas_side,
         "encoder_type": cfg.get("encoder_type"),
+        "none_threshold": none_threshold,
+        "refine": refine,
         "n_samples": len(ds),
         "elapsed_s": elapsed,
         "report": _strip_per_sample(report),
@@ -128,6 +151,12 @@ def main():
     ap.add_argument("--canvas-side", type=int, default=64,
                     help="canvas side for --baseline (model uses its own cfg)")
     ap.add_argument("--data-root", default="data")
+    ap.add_argument("--none-threshold", type=float, default=0.85,
+                    help="keep a query if P(none) < this; lower = stricter = "
+                         "fewer primitives (0.50 fixes the model's over-prediction)")
+    ap.add_argument("--refine", choices=["none", "algebraic", "diffvg"],
+                    default="algebraic",
+                    help="refinement strategy; diffvg is most precise (and slow)")
     ap.add_argument("--save-json", action="store_true",
                     help="write score.json next to the checkpoint")
     args = ap.parse_args()
@@ -137,7 +166,8 @@ def main():
     else:
         if not args.checkpoint:
             ap.error("checkpoint path required when --baseline is not set")
-        result = score_checkpoint(Path(args.checkpoint), root=args.data_root)
+        result = score_checkpoint(Path(args.checkpoint), root=args.data_root,
+                                  none_threshold=args.none_threshold, refine=args.refine)
         if args.save_json:
             out = Path(args.checkpoint).parent / "score.json"
             out.write_text(json.dumps(result, indent=2, default=str))
