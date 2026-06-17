@@ -24,12 +24,18 @@ SPLITS = {
     "technical/cv2": "data/probe_tech128_cv2",
     "heldout/ours": "data/probe_heldout128_ours",
     "heldout/cv2": "data/probe_heldout128_cv2",
+    "heldout2/ours": "data/probe_heldout2_128_ours",
+    "heldout2/cv2": "data/probe_heldout2_128_cv2",
 }
 
 
 def _score(pred, canvas, label):
+    from pathlib import Path
     print(f"--- {label} ---")
     for name, path in SPLITS.items():
+        if not (Path(path) / "manifest.json").exists():
+            print(f"  {name:20s} (split not built, skipped)")
+            continue
         r = run_predictor(pred, Dataset(path), canvas)
         print(f"  {name:20s} score={r['mean_score']:.3f} iou={r['mean_render_iou']:.3f} "
               f"type={r['mean_type_accuracy']:.3f} geom={r['mean_geometric_error']:.3f} "

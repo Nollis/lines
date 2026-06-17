@@ -14,12 +14,17 @@ from pathlib import Path
 from PIL import Image
 
 from lines.datagen.heldout_layout import sample_heldout_set
+from lines.datagen.heldout2_layout import sample_heldout2_set
 from lines.datagen.probe_render import render_cv2
 from lines.datagen.render import render_primitives
 from lines.datagen.sampler2d import Canvas
 from lines.datagen.technical_layout import sample_technical_set
 
-_GENERATORS = {"technical": sample_technical_set, "heldout": sample_heldout_set}
+_GENERATORS = {
+    "technical": sample_technical_set,
+    "heldout": sample_heldout_set,
+    "heldout2": sample_heldout2_set,
+}
 _LINE_WIDTH = 2.0
 
 

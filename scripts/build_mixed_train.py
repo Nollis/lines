@@ -20,25 +20,36 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from lines.datagen.heldout_layout import sample_heldout_set
 from lines.datagen.randomize import sample_render_params
 from lines.datagen.render import render_primitives
 from lines.datagen.sampler2d import Canvas, sample_primitive_set
 from lines.datagen.technical_layout import sample_technical_set
 
+# Structured-layout generators folded into training, each with a disjoint seed
+# base (kept clear of probe seeds: technical probe 700k, held-out-1 probe 800k,
+# held-out-2 probe 900k).
+_STRUCTURED = [
+    (sample_technical_set, 500_000),
+    (sample_heldout_set, 600_000),
+]
+
 
 def build(out_dir: str, n: int, canvas_side: int, tech_fraction: float,
-          rand_seed0: int = 0, tech_seed0: int = 500_000):
+          rand_seed0: int = 0, include_heldout: bool = True):
     canvas = Canvas(canvas_side, canvas_side)
     out = Path(out_dir)
     (out / "images").mkdir(parents=True, exist_ok=True)
     choice_rng = np.random.default_rng(12_345)   # deterministic source selection
+    pool = _STRUCTURED if include_heldout else _STRUCTURED[:1]
 
     entries = []
     n_tech = 0
     for i in range(n):
         if choice_rng.random() < tech_fraction:
-            pset = sample_technical_set(tech_seed0 + i, canvas)
-            source = "technical"
+            gen, seed0 = pool[int(choice_rng.integers(0, len(pool)))]
+            pset = gen(seed0 + i, canvas)
+            source = "structured"
             n_tech += 1
         else:
             pset = sample_primitive_set(rand_seed0 + i, canvas=canvas)
@@ -54,7 +65,7 @@ def build(out_dir: str, n: int, canvas_side: int, tech_fraction: float,
 
     (out / "manifest.json").write_text(json.dumps(
         {"canvas": {"width": canvas_side, "height": canvas_side}, "samples": entries}, indent=2))
-    print(f"wrote {out}: {n} samples, {n_tech} technical ({n_tech / n:.0%}), "
+    print(f"wrote {out}: {n} samples, {n_tech} structured ({n_tech / n:.0%}), "
           f"{n - n_tech} random")
 
 
