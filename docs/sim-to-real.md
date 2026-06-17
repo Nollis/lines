@@ -151,3 +151,40 @@ out-of-distribution failure into both an in-distribution strength and a
 generalization gain. The next probe (a third arrangement style) keeps the loop
 honest.
 
+## Loop iteration 2 — and what it reveals about the method
+
+The first held-out families (nested squares, radial bursts, circle chains) were
+folded into training (`data/train128_mixed2`, 10 structured families total) and
+a THIRD probe family set was introduced as the new honest frontier: ``grid``,
+``wheel``, ``arc_chain`` (`lines/datagen/heldout2_layout.py`), disjoint from all
+training families. The model (`checkpoints/v1_enriched2_128`) was warm-started
+from the round-1 model.
+
+| Split | round 1 | round 2 | Δ |
+|-------|---------|---------|---|
+| random (in-dist)            | 0.581 | 0.604 | +0.023 |
+| technical                   | 0.795 | 0.792 | −0.003 |
+| held-out-1 (now trained)    | 0.558 | 0.768 | +0.210 |
+| held-out-2 (new, untrained) | 0.391 | 0.411 | +0.020 |
+
+Findings:
+
+1. **The loop is repeatable.** Folding held-out-1 in closed its gap by +0.210
+   (type accuracy → 1.000), the same magnitude as technical in round 1.
+2. **Gains compound without forgetting.** Random improved (+0.023) and technical
+   held — more structured diversity helped everything.
+3. **Transfer to genuinely-novel structure is modest** (+0.020 on held-out-2).
+   This is the load-bearing lesson: the loop reliably expands coverage
+   *family-by-family*, but it is not a shortcut to open-ended generalization.
+   The model learns the arrangement families it is shown, not a general notion
+   of structure. Each new structural relationship must essentially be added.
+
+### Implication for the product
+
+For the stated target — *clean digital renders* of technical illustrations —
+the arrangement vocabulary is enumerable (concentric features, bolt patterns,
+grids, fillets, ...). The family-by-family loop is therefore a sound, finite
+path to broad coverage: enumerate the arrangements that matter, add them, verify
+with a fresh held-out probe each time. For truly open-ended input it would not
+suffice on its own.
+
