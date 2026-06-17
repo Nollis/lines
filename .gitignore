@@ -11,3 +11,7 @@ data/
 # Checkpoints
 *.pt
 *.ckpt
+checkpoints/
+
+# Training logs
+train_*.log

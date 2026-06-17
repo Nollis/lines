@@ -25,6 +25,22 @@ import torch.nn as nn
 from lines.models.encoding import N_PARAMS, N_TYPES
 
 
+def _plain_conv_block(c_in: int, c_out: int) -> nn.Sequential:
+    """Legacy encoder block: two strided convs, no residual.
+
+    Retained so checkpoints saved before the residual switch can be loaded.
+    State-dict keys for this block are ``encoder.{i}.{0,1,3,4}.*``.
+    """
+    return nn.Sequential(
+        nn.Conv2d(c_in, c_out, kernel_size=3, stride=2, padding=1),
+        nn.GroupNorm(8, c_out),
+        nn.GELU(),
+        nn.Conv2d(c_out, c_out, kernel_size=3, padding=1),
+        nn.GroupNorm(8, c_out),
+        nn.GELU(),
+    )
+
+
 class ResidualBlock(nn.Module):
     def __init__(self, c_in: int, c_out: int, stride: int = 2) -> None:
         super().__init__()
@@ -57,19 +73,31 @@ class SetPredictor(nn.Module):
         n_heads: int = 4,
         n_decoder_layers: int = 3,
         feature_size: int = 8,   # input HxW / 16 (e.g. 128 -> 8)
+        encoder_type: str = "residual",  # "residual" (current) or "plain" (legacy compat)
     ):
         super().__init__()
         self.n_queries = n_queries
         self.d_model = d_model
         self.feature_size = feature_size
+        self.encoder_type = encoder_type
 
         # encoder: 1 -> 32 -> 64 -> 96 -> d_model (each block /2)
-        self.encoder = nn.Sequential(
-            ResidualBlock(1, 32),
-            ResidualBlock(32, 64),
-            ResidualBlock(64, 96),
-            ResidualBlock(96, d_model),
-        )
+        if encoder_type == "residual":
+            self.encoder = nn.Sequential(
+                ResidualBlock(1, 32),
+                ResidualBlock(32, 64),
+                ResidualBlock(64, 96),
+                ResidualBlock(96, d_model),
+            )
+        elif encoder_type == "plain":
+            self.encoder = nn.Sequential(
+                _plain_conv_block(1, 32),
+                _plain_conv_block(32, 64),
+                _plain_conv_block(64, 96),
+                _plain_conv_block(96, d_model),
+            )
+        else:
+            raise ValueError(f"unknown encoder_type: {encoder_type!r}")
 
         # learned 2D positional embedding for the feature map tokens
         self.pos_embed = nn.Parameter(torch.zeros(feature_size * feature_size, d_model))
@@ -116,6 +144,44 @@ class SetPredictor(nn.Module):
         free = raw[..., 4:5]
         params = torch.cat([coords, free], dim=-1)                  # (B, N, P)
         return logits, params
+
+
+def detect_encoder_type(state_dict: dict) -> str:
+    """Sniff a state dict to decide which encoder shape produced it.
+
+    The plain (legacy) encoder stores ``encoder.0.0.weight`` (the first Conv2d
+    inside an ``nn.Sequential``). The residual encoder stores
+    ``encoder.0.conv1.weight``.
+    """
+    if "encoder.0.conv1.weight" in state_dict:
+        return "residual"
+    if "encoder.0.0.weight" in state_dict:
+        return "plain"
+    raise ValueError("state dict has no recognized encoder keys")
+
+
+def load_set_predictor(checkpoint_path, map_location: str = "cpu"):
+    """Instantiate a :class:`SetPredictor` matching a saved checkpoint.
+
+    Auto-detects ``encoder_type`` from the state dict so checkpoints saved
+    before the residual switch still load. Returns ``(model, cfg)``.
+    """
+    ck = torch.load(checkpoint_path, map_location=map_location, weights_only=False)
+    state = ck["model"]
+    cfg = dict(ck.get("cfg", {}))
+    cfg.setdefault("encoder_type", detect_encoder_type(state))
+
+    canvas_side = int(cfg.get("canvas_side", 64))
+    model = SetPredictor(
+        n_queries=int(cfg.get("n_queries", 16)),
+        d_model=int(cfg.get("d_model", 128)),
+        n_heads=int(cfg.get("n_heads", 4)),
+        n_decoder_layers=int(cfg.get("n_decoder_layers", 3)),
+        feature_size=required_feature_size(canvas_side),
+        encoder_type=cfg["encoder_type"],
+    )
+    model.load_state_dict(state)
+    return model, cfg
 
 
 def count_parameters(model: nn.Module) -> int:

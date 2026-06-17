@@ -35,4 +35,30 @@ def run_predictor(predictor: Callable, dataset, canvas) -> dict:
             report[f"mean_{key}"] = sum(s[key] for s in per_sample) / len(per_sample)
         else:
             report[f"mean_{key}"] = 0.0
+
+    # per-class aggregates: sum n_gt/n_pred/n_matched/type_hits/geom_error_sum
+    # across the dataset, then derive rates -- not the mean-of-means, which
+    # would over-weight samples with few primitives.
+    classes = ("line", "arc", "circle")
+    per_class = {
+        k: {"n_gt": 0, "n_pred": 0, "n_matched": 0, "type_hits": 0,
+            "geometric_error_sum": 0.0}
+        for k in classes
+    }
+    for s in per_sample:
+        for k in classes:
+            pc = s["per_class"][k]
+            per_class[k]["n_gt"] += pc["n_gt"]
+            per_class[k]["n_pred"] += pc["n_pred"]
+            per_class[k]["n_matched"] += pc["n_matched"]
+            per_class[k]["type_hits"] += pc["type_hits"]
+            per_class[k]["geometric_error_sum"] += pc["geometric_error_sum"]
+    for k in classes:
+        stats = per_class[k]
+        nm = stats["n_matched"]
+        stats["type_accuracy"] = stats["type_hits"] / nm if nm else None
+        stats["geometric_error"] = stats["geometric_error_sum"] / nm if nm else None
+        # recall = of GT primitives of this class, how many got any match
+        stats["recall"] = nm / stats["n_gt"] if stats["n_gt"] else None
+    report["per_class"] = per_class
     return report

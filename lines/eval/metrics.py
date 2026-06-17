@@ -40,14 +40,34 @@ _W_RENDER = 0.4
 _W_TYPE = 0.3
 _W_GEOM = 0.3
 
+_CLASSES = ("line", "arc", "circle")
+
+
+def _empty_per_class():
+    return {k: {"n_gt": 0, "n_pred": 0, "n_matched": 0, "type_hits": 0,
+                "geometric_error_sum": 0.0,
+                "type_accuracy": None, "geometric_error": None} for k in _CLASSES}
+
 
 def evaluate(pred, gt, canvas) -> dict:
-    """Score a predicted primitive set against ground truth."""
+    """Score a predicted primitive set against ground truth.
+
+    The returned dict includes a ``per_class`` breakdown -- aggregates split by
+    the ground-truth primitive type so it's visible which class the predictor
+    is failing on (e.g. arcs are typically the hardest).
+    """
     diag = math.hypot(canvas.width, canvas.height)
     n_pred = len(pred.primitives)
     n_gt = len(gt.primitives)
 
     render_iou = _render_iou(pred, gt, canvas)
+    per_class = _empty_per_class()
+    for p in pred.primitives:
+        if p.type in per_class:
+            per_class[p.type]["n_pred"] += 1
+    for g in gt.primitives:
+        if g.type in per_class:
+            per_class[g.type]["n_gt"] += 1
 
     if n_pred == 0 or n_gt == 0:
         n_matched = 0
@@ -67,6 +87,21 @@ def evaluate(pred, gt, canvas) -> dict:
             if pred.primitives[i].type == gt.primitives[j].type
         )
         type_accuracy = type_hits / n_matched
+        # per-class accumulation, keyed by the GT type of each matched pair
+        for i, j in zip(rows, cols):
+            kind = gt.primitives[j].type
+            if kind not in per_class:
+                continue
+            per_class[kind]["n_matched"] += 1
+            per_class[kind]["geometric_error_sum"] += float(cost[i, j])
+            if pred.primitives[i].type == kind:
+                per_class[kind]["type_hits"] += 1
+
+    # finalize per-class rates (None when there's nothing to score)
+    for kind, stats in per_class.items():
+        if stats["n_matched"]:
+            stats["type_accuracy"] = stats["type_hits"] / stats["n_matched"]
+            stats["geometric_error"] = stats["geometric_error_sum"] / stats["n_matched"]
 
     false_positives = max(0, n_pred - n_matched)
     false_negatives = max(0, n_gt - n_matched)
@@ -90,6 +125,7 @@ def evaluate(pred, gt, canvas) -> dict:
         "n_matched": n_matched,
         "false_positives": false_positives,
         "false_negatives": false_negatives,
+        "per_class": per_class,
     }
 
 

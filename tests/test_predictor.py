@@ -9,6 +9,7 @@ from lines.train.predictor import ModelPredictor
 
 
 def test_untrained_predictor_returns_empty_set_for_blank_image():
+    torch.manual_seed(0)
     canvas = Canvas(64, 64)
     model = SetPredictor(n_queries=8, d_model=64, n_heads=4, n_decoder_layers=2,
                          feature_size=required_feature_size(64))
