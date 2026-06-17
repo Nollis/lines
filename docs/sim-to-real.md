@@ -57,3 +57,53 @@ Does **not** yet establish robustness to:
 The natural next probe is a small set of **third-party clean renders** (e.g. an
 SVG icon library rasterized independently) with hand-specified primitive ground
 truth — content the generator never produced.
+
+---
+
+# Sim-to-real probe v2: content-distribution shift
+
+Probe v1 changed only the rasterizer. Probe v2 changes the **content
+distribution**: an independent generator (`lines/datagen/technical_layout.py`)
+produces structured *technical-drawing* layouts the training sampler never makes
+— concentric circles, bolt-hole patterns, rectangles, crosshairs, tangent
+circles, filleted corners — with exact ground truth. Each layout is rendered
+through both the training renderer (isolates content shift) and OpenCV
+(content + rasterizer shift). Build with:
+
+    python scripts/build_technical_probe.py --out-root data/probe_tech128 --n 300
+
+## Result (300 samples, threshold 0.50 + algebraic refine)
+
+| Predictor | random/ours (in-dist) | technical/ours | technical/cv2 |
+|-----------|----------------------|----------------|---------------|
+| Classical baseline | 0.618 | 0.541 (−12%) | 0.538 (−13%) |
+| Model | 0.590 | 0.460 (−22%) | 0.498 (−16%) |
+
+## Findings
+
+1. **Content shift hurts far more than rasterizer shift** — 12–22% here vs ~4%
+   in probe v1, for *both* methods. Structured layouts are simply harder than
+   random shape-soup.
+2. **The model is more brittle to content shift than the classical baseline**
+   (−22% vs −12% on technical/ours). It partly overfit to the training
+   *distribution of arrangements*, not just the pixels.
+3. **The two shifts are not additive** — the model scores *better* on
+   technical/cv2 (0.498) than technical/ours (0.460), because OpenCV's bolder
+   strokes give the local refinement more ink to fit (geom 0.108 → 0.053,
+   coverage 0.657 → 0.714). A rasterizer change can partly *compensate* a
+   content change.
+4. **Qualitatively, the failures are structural relationships**, not shapes:
+   concentric circles come out scattered (the model has no notion of a shared
+   center), parallel-line clusters collapse into overlap. Tangent / independent
+   circles — closest to the training distribution — are handled fine. See
+   `data/preview/technical_predictions.png`.
+
+## Implication (and why it's fixable)
+
+The weakness is **content-distribution coverage**, not a fundamental limit.
+Because the training data is *generated*, the fix is direct: enrich the training
+sampler with structured arrangements (concentric, parallel, patterns,
+tangencies) so the model sees these relationships during training. This is the
+clearest compounding next step — it converts an OOD failure into in-distribution
+training signal. It pairs naturally with scaling primitive complexity.
+
