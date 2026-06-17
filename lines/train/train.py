@@ -52,6 +52,7 @@ class TrainConfig:
     class_weight_none: float = 0.2
     param_weight: float = 5.0
     render_weight: float = 1.0
+    checkpoint_every: int = 5   # save model.pt every N epochs (crash/sleep safety)
     seed: int = 0
 
 
@@ -148,6 +149,11 @@ def train(cfg: TrainConfig, train_dir: Path, test_dir: Path, out_dir: Path,
         elapsed = time.time() - t0
         log(f"epoch {epoch:02d}/{cfg.epochs}  loss={mean_loss:.4f}  ({elapsed:.1f}s)")
         history.append({"epoch": epoch, "loss": mean_loss, "elapsed_s": elapsed})
+
+        # periodic checkpoint so a crash/sleep never loses the whole run
+        if epoch % cfg.checkpoint_every == 0 or epoch == cfg.epochs:
+            torch.save({"model": model.state_dict(), "cfg": cfg.__dict__,
+                        "epoch": epoch}, out_dir / "model.pt")
 
     # final eval against the same metric used for the baseline
     model.eval()
