@@ -146,6 +146,57 @@ class SetPredictor(nn.Module):
         return logits, params
 
 
+def warm_start_state_dict(src_state: dict, src_feature_size: int,
+                          dst_feature_size: int, d_model: int) -> dict:
+    """Adapt a state dict from one encoder feature-map size to another.
+
+    Every tensor is copied unchanged except ``pos_embed``, which is a per-token
+    learned positional embedding of shape ``(src_fs**2, d_model)``. When the
+    feature size changes (e.g. 4x4 at 64px -> 8x8 at 128px) it is reshaped to a
+    spatial grid, bilinearly interpolated to the new grid, and flattened back --
+    the standard trick for transferring a ViT-style positional embedding across
+    resolutions. The convolutional encoder, decoder, queries, and heads are all
+    resolution-agnostic and transfer directly.
+    """
+    import torch.nn.functional as F
+
+    new = dict(src_state)
+    if src_feature_size == dst_feature_size:
+        return new
+
+    pe = src_state["pos_embed"]                                   # (S*S, d)
+    pe = pe.reshape(1, src_feature_size, src_feature_size, d_model).permute(0, 3, 1, 2)
+    pe = F.interpolate(pe, size=(dst_feature_size, dst_feature_size),
+                       mode="bilinear", align_corners=False)
+    pe = pe.permute(0, 2, 3, 1).reshape(dst_feature_size * dst_feature_size, d_model)
+    new["pos_embed"] = pe.contiguous()
+    return new
+
+
+def build_warm_started(src_checkpoint, dst_canvas_side: int,
+                       map_location: str = "cpu"):
+    """Build a model at ``dst_canvas_side`` initialized from a checkpoint trained
+    at a (possibly different) resolution. Returns ``(model, src_cfg)``.
+    """
+    src_model, src_cfg = load_set_predictor(src_checkpoint, map_location=map_location)
+    src_side = int(src_cfg.get("canvas_side", 64))
+    src_fs = required_feature_size(src_side)
+    dst_fs = required_feature_size(dst_canvas_side)
+    d_model = int(src_cfg.get("d_model", 128))
+
+    dst_model = SetPredictor(
+        n_queries=int(src_cfg.get("n_queries", 16)),
+        d_model=d_model,
+        n_heads=int(src_cfg.get("n_heads", 4)),
+        n_decoder_layers=int(src_cfg.get("n_decoder_layers", 3)),
+        feature_size=dst_fs,
+        encoder_type=src_cfg.get("encoder_type", "residual"),
+    )
+    adapted = warm_start_state_dict(src_model.state_dict(), src_fs, dst_fs, d_model)
+    dst_model.load_state_dict(adapted)
+    return dst_model, src_cfg
+
+
 def detect_encoder_type(state_dict: dict) -> str:
     """Sniff a state dict to decide which encoder shape produced it.
 

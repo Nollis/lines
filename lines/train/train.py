@@ -27,7 +27,9 @@ from lines.eval.harness import run_predictor
 from lines.models.encoding import N_PARAMS, encode_set
 from lines.models.losses import SetPredictionLoss
 from lines.models.matcher import HungarianMatcher
-from lines.models.set_predictor import SetPredictor, required_feature_size
+from lines.models.set_predictor import (
+    SetPredictor, build_warm_started, required_feature_size,
+)
 from lines.train.predictor import ModelPredictor
 
 
@@ -80,7 +82,7 @@ def _collate(batch):
 # --- train --------------------------------------------------------------------
 
 def train(cfg: TrainConfig, train_dir: Path, test_dir: Path, out_dir: Path,
-          log=print) -> dict:
+          log=print, init_from: Path | None = None) -> dict:
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -99,11 +101,22 @@ def train(cfg: TrainConfig, train_dir: Path, test_dir: Path, out_dir: Path,
     loader = DataLoader(_TrainView(train_ds, canvas), batch_size=cfg.batch_size,
                         shuffle=True, num_workers=0, collate_fn=_collate)
 
-    model = SetPredictor(
-        n_queries=cfg.n_queries, d_model=cfg.d_model,
-        n_heads=cfg.n_heads, n_decoder_layers=cfg.n_decoder_layers,
-        feature_size=required_feature_size(cfg.canvas_side),
-    )
+    if init_from is not None:
+        model, src_cfg = build_warm_started(init_from, cfg.canvas_side)
+        log(f"warm-started from {init_from} "
+            f"(src canvas {src_cfg.get('canvas_side')} -> {cfg.canvas_side}, "
+            f"encoder={src_cfg.get('encoder_type')})")
+        # inherit the source architecture so cfg recorded in the checkpoint is accurate
+        cfg.n_queries = int(src_cfg.get("n_queries", cfg.n_queries))
+        cfg.d_model = int(src_cfg.get("d_model", cfg.d_model))
+        cfg.n_heads = int(src_cfg.get("n_heads", cfg.n_heads))
+        cfg.n_decoder_layers = int(src_cfg.get("n_decoder_layers", cfg.n_decoder_layers))
+    else:
+        model = SetPredictor(
+            n_queries=cfg.n_queries, d_model=cfg.d_model,
+            n_heads=cfg.n_heads, n_decoder_layers=cfg.n_decoder_layers,
+            feature_size=required_feature_size(cfg.canvas_side),
+        )
     crit = SetPredictionLoss(matcher=HungarianMatcher(),
                              class_weight_none=cfg.class_weight_none,
                              param_weight=cfg.param_weight,
@@ -159,19 +172,26 @@ def main():
     ap.add_argument("--train-samples", type=int, default=4000)
     ap.add_argument("--test-samples", type=int, default=400)
     ap.add_argument("--lr", type=float, default=2e-3)
+    ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--param-weight", type=float, default=5.0)
     ap.add_argument("--render-weight", type=float, default=1.0)
     ap.add_argument("--render-canvas-size", type=int, default=32)
+    ap.add_argument("--init-from", default=None,
+                    help="warm-start from this checkpoint (e.g. a model trained "
+                         "at a lower resolution); pos_embed is interpolated")
     args = ap.parse_args()
     cfg = TrainConfig(canvas_side=args.canvas_side,
                       epochs=args.epochs,
                       train_samples=args.train_samples,
                       test_samples=args.test_samples,
                       lr=args.lr,
+                      batch_size=args.batch_size,
                       param_weight=args.param_weight,
                       render_weight=args.render_weight,
                       render_canvas_size=args.render_canvas_size)
-    train(cfg, Path(args.train_dir), Path(args.test_dir), Path(args.out_dir))
+    init_from = Path(args.init_from) if args.init_from else None
+    train(cfg, Path(args.train_dir), Path(args.test_dir), Path(args.out_dir),
+          init_from=init_from)
 
 
 if __name__ == "__main__":
