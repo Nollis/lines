@@ -176,6 +176,9 @@ def main():
     ap.add_argument("--param-weight", type=float, default=5.0)
     ap.add_argument("--render-weight", type=float, default=1.0)
     ap.add_argument("--render-canvas-size", type=int, default=32)
+    ap.add_argument("--n-queries", type=int, default=8,
+                    help="number of primitive queries (raise for content with "
+                         "more primitives, e.g. 16 for projected boxes)")
     ap.add_argument("--init-from", default=None,
                     help="warm-start from this checkpoint (e.g. a model trained "
                          "at a lower resolution); pos_embed is interpolated")
@@ -186,6 +189,7 @@ def main():
                       test_samples=args.test_samples,
                       lr=args.lr,
                       batch_size=args.batch_size,
+                      n_queries=args.n_queries,
                       param_weight=args.param_weight,
                       render_weight=args.render_weight,
                       render_canvas_size=args.render_canvas_size)
