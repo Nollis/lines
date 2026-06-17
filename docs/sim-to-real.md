@@ -107,3 +107,47 @@ tangencies) so the model sees these relationships during training. This is the
 clearest compounding next step — it converts an OOD failure into in-distribution
 training signal. It pairs naturally with scaling primitive complexity.
 
+---
+
+# Generator enrichment: closing the content gap
+
+The training set was rebuilt as 59% random shape-soup + 41% structured layouts
+(`scripts/build_mixed_train.py`, the 7 technical families on training-range
+seeds disjoint from every probe). The 128 model was warm-started on it for 30
+epochs (`checkpoints/v1_enriched_128`). To keep the measurement honest, a NEW
+held-out probe with *different* structural relationships (nested squares, radial
+bursts, circle chains — `lines/datagen/heldout_layout.py`) was used: those
+families never appear in training.
+
+## Before / after (threshold 0.50 + algebraic refine)
+
+| Split | Baseline | Model before | Model after | Δ |
+|-------|----------|--------------|-------------|---|
+| random (in-dist)        | 0.618 | 0.590 | 0.581 | −0.009 |
+| technical               | 0.541 | 0.460 | **0.795** | **+0.335** |
+| technical/cv2           | 0.538 | 0.498 | 0.761 | +0.263 |
+| held-out (never trained)| 0.377 | 0.511 | **0.558** | **+0.047** |
+| held-out/cv2            | 0.287 | 0.530 | 0.563 | +0.033 |
+
+## Findings
+
+1. **The targeted weakness became a strength.** Technical content went from
+   losing to the classical baseline (0.460 vs 0.541) to beating it decisively
+   (0.795 vs 0.541). On technical content type accuracy reached 0.993, coverage
+   0.928, geometric error 0.023 (~5x better than before). Concentric circles —
+   the headline failure — are now rendered cleanly (see
+   `data/preview/enrichment_before_after.png`).
+2. **Generalization improved, not just memorization.** The held-out families,
+   which never appear in training, also improved (+0.047 / +0.033). Learning the
+   technical families taught a general notion of structured arrangement that
+   transfers to unseen structure. Because the held-out families are disjoint
+   from training, this is a real generalization gain, not leakage.
+3. **No meaningful regression on random content** (0.590 → 0.581). The
+   structured gains did not cost in-distribution performance.
+
+This is the synthetic-data loop working as designed: a probe revealed a gap, the
+gap identified exactly what to generate, and adding it to training converted an
+out-of-distribution failure into both an in-distribution strength and a
+generalization gain. The next probe (a third arrangement style) keeps the loop
+honest.
+
