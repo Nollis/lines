@@ -42,6 +42,12 @@ _W_GEOM = 0.3
 
 _CLASSES = ("line", "arc", "circle")
 
+# A predicted primitive is a TRUE match only if its Hungarian-assigned geometric
+# error (normalized chamfer / canvas diagonal) is below this and its type is
+# correct. ~0.05 of the diagonal ≈ 4.5px at 64px -- tight enough that a tangle of
+# spurious lines cannot all be true matches.
+_MATCH_THRESHOLD = 0.05
+
 
 def _empty_per_class():
     return {k: {"n_gt": 0, "n_pred": 0, "n_matched": 0, "type_hits": 0,
@@ -49,12 +55,17 @@ def _empty_per_class():
                 "type_accuracy": None, "geometric_error": None} for k in _CLASSES}
 
 
-def evaluate(pred, gt, canvas) -> dict:
+def evaluate(pred, gt, canvas, match_threshold: float = _MATCH_THRESHOLD) -> dict:
     """Score a predicted primitive set against ground truth.
 
-    The returned dict includes a ``per_class`` breakdown -- aggregates split by
-    the ground-truth primitive type so it's visible which class the predictor
-    is failing on (e.g. arcs are typically the hardest).
+    The headline structural metric is ``f1`` (with ``precision`` / ``recall``):
+    a predicted primitive is a TRUE match only if Hungarian-assigned to a GT
+    primitive with normalized geometric error < ``match_threshold`` AND correct
+    type. Over-prediction (tangles) tanks precision; missing primitives tank
+    recall. ``render_iou`` and the legacy composite ``score`` are kept as
+    diagnostics -- they are too forgiving of structural error on their own.
+
+    The returned dict also includes a ``per_class`` breakdown.
     """
     diag = math.hypot(canvas.width, canvas.height)
     n_pred = len(pred.primitives)
@@ -71,6 +82,7 @@ def evaluate(pred, gt, canvas) -> dict:
 
     if n_pred == 0 or n_gt == 0:
         n_matched = 0
+        true_matches = 0
         type_accuracy = 0.0
         geometric_error = 1.0 if (n_pred or n_gt) else 0.0
     else:
@@ -87,6 +99,12 @@ def evaluate(pred, gt, canvas) -> dict:
             if pred.primitives[i].type == gt.primitives[j].type
         )
         type_accuracy = type_hits / n_matched
+        # strict true match: close enough AND correct type
+        true_matches = sum(
+            1 for i, j in zip(rows, cols)
+            if cost[i, j] < match_threshold
+            and pred.primitives[i].type == gt.primitives[j].type
+        )
         # per-class accumulation, keyed by the GT type of each matched pair
         for i, j in zip(rows, cols):
             kind = gt.primitives[j].type
@@ -108,6 +126,17 @@ def evaluate(pred, gt, canvas) -> dict:
     coverage = n_matched / max(n_pred, n_gt, 1)
     geom_score = 1.0 - min(1.0, geometric_error)
 
+    # strict primitive precision / recall / F1 (the structural headline)
+    if n_pred == 0:
+        precision = 1.0 if n_gt == 0 else 0.0
+    else:
+        precision = true_matches / n_pred
+    if n_gt == 0:
+        recall = 1.0 if n_pred == 0 else 0.0
+    else:
+        recall = true_matches / n_gt
+    f1 = 0.0 if (precision + recall) == 0 else 2 * precision * recall / (precision + recall)
+
     score = (
         _W_RENDER * render_iou
         + _W_TYPE * coverage * type_accuracy
@@ -115,6 +144,10 @@ def evaluate(pred, gt, canvas) -> dict:
     )
 
     return {
+        "f1": float(f1),
+        "precision": float(precision),
+        "recall": float(recall),
+        "true_matches": true_matches,
         "score": float(score),
         "render_iou": float(render_iou),
         "type_accuracy": float(type_accuracy),

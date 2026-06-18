@@ -13,7 +13,8 @@ from typing import Callable
 
 from lines.eval.metrics import evaluate
 
-_MEAN_KEYS = ("score", "render_iou", "type_accuracy", "geometric_error", "coverage")
+_MEAN_KEYS = ("f1", "precision", "recall", "score", "render_iou",
+              "type_accuracy", "geometric_error", "coverage")
 
 
 def run_predictor(predictor: Callable, dataset, canvas) -> dict:
