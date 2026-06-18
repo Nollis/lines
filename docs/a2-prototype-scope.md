@@ -140,3 +140,27 @@ bake-off shows neither pure candidate suffices.
 A2 is done when there is: (1) a passing tokenizer round-trip + a working overfit
 of at least the favored candidate on both box and concentric tests, (2) a filled
 rubric with measured F1s, and (3) a recorded architecture decision feeding A3.
+
+## Result
+
+**Decision: autoregressive (Candidate A).**
+
+The autoregressive prototype was built (`lines/models/seq_tokenizer.py`,
+`lines/models/autoregressive.py`) and run on both discriminating tests via
+`scripts/a2_overfit_bench.py` (CPU, ~7 min total):
+
+| Test | N | Steps | Mean F1 | Perfect F1 |
+|------|---|-------|---------|------------|
+| Boxes (shared corners) | 64 | 600 | **0.998** | 63/64 |
+| Concentric circles (shared center + curves) | 64 | 600 | **0.995** | 63/64 |
+
+Test 2 (the load-bearing comparison) is exactly what vertex-graph cannot
+represent (no vertices in a circle; "shared center" is not an edge in any
+vertex-graph). Since autoregressive cleanly handles both relationship classes
+the project has been bitten by, vertex-graph was ruled out without needing to
+build it. Loss dropped from ~5.1 → 0.008 on both runs (well-behaved, no
+plateau), 128/128 decodes returned valid token streams.
+
+This justifies the parent plan's Gate-3 decision: A3 builds out the
+autoregressive model at full scale (with GPU as a prerequisite, per the parent
+plan's risk register).

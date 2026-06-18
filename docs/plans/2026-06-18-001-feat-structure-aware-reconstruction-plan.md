@@ -272,7 +272,7 @@ reconstructions.
 |------|-------|----------|
 | 1 | M1 | The honest metric must rank the tangle low and a clean reconstruction high. If not, fix the metric before anything else. |
 | 2 | A1 | **DECIDED → proceed to A2.** Post-process moved box F1 only 0.262 → 0.282 (dedup fixed the count 12.9 → 8.3 and precision 0.23 → 0.30, but recall *fell* 0.315 → 0.273 — merging can't create accurate edges the model never predicted). 0.28 is far from the ~0.9 target, so the architecture rewrite is justified, not premature. |
-| 3 | A2 | Choose vertex-graph vs autoregressive from prototype F1, complexity, and curve-handling, then build it in A3. |
+| 3 | A2 | **DECIDED → autoregressive.** Bake-off (`scripts/a2_overfit_bench.py`, 64 samples × 600 steps each, ~7 min CPU): autoregressive overfit *boxes* to mean F1 0.998 (63/64 exact) and *concentric circles* to mean F1 0.995 (63/64 exact). Both relationship-failure cases the project hit (shared corners AND shared centers) are now representable in one architecture. Vertex-graph not built -- it structurally cannot represent the concentric case, so the bake-off ruled it out without needing implementation. |
 
 ## Risks & Dependencies
 
