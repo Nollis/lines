@@ -271,7 +271,7 @@ reconstructions.
 | Gate | After | Decision |
 |------|-------|----------|
 | 1 | M1 | The honest metric must rank the tangle low and a clean reconstruction high. If not, fix the metric before anything else. |
-| 2 | A1 | If post-processing brings box F1 to an acceptable level, **defer** the architecture rewrite (YAGNI) and proceed to Stage 2 on set-prediction + post-process. If a large gap remains, proceed to A2. |
+| 2 | A1 | **DECIDED → proceed to A2.** Post-process moved box F1 only 0.262 → 0.282 (dedup fixed the count 12.9 → 8.3 and precision 0.23 → 0.30, but recall *fell* 0.315 → 0.273 — merging can't create accurate edges the model never predicted). 0.28 is far from the ~0.9 target, so the architecture rewrite is justified, not premature. |
 | 3 | A2 | Choose vertex-graph vs autoregressive from prototype F1, complexity, and curve-handling, then build it in A3. |
 
 ## Risks & Dependencies
