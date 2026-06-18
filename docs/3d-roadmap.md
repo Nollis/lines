@@ -49,6 +49,46 @@ schema + model + metric extension. Boxes don't. That split defines the stages.
 - **Note:** the model must be retrained (new query count + new content); the 2D
   checkpoint warm-starts everything except the query embeddings.
 
+#### Stage 1 result (measured)
+
+The pipeline works end to end; clean reconstruction does not. A 16-query model
+trained on 4000 projected box scenes, scored on 400 held-out boxes (64px,
+threshold 0.50 + algebraic refine):
+
+| Predictor | Score | RenderIoU | TypeAcc | Coverage |
+|-----------|-------|-----------|---------|----------|
+| classical baseline | 0.200 | 0.420 | 0.013 | 0.114 |
+| 2D model (8q, untrained on boxes) | 0.299 | 0.450 | 0.236 | 0.336 |
+| **box model (16q)** | **0.629** | 0.565 | 1.000 | 0.696 |
+
+**Two-sided finding:**
+
+- *Pipeline validated.* Analytic projection → exact Line ground truth → train →
+  measure runs end to end, and the box model roughly doubles the best
+  before-number (0.299 → 0.629), with perfect type accuracy.
+- *Reconstruction is NOT clean.* Qualitatively the predictions are a tangle of
+  overlapping segments around the silhouette, not a 9-edge wireframe with
+  corners that meet. The model over-predicts (~12.9 lines for an ~8.8-edge box).
+  Render-IoU rewards rough ink coverage and **masks** the structural error.
+
+**Root cause — the architecture inflection, arriving early.** A box is 9 lines
+meeting at 7 shared corners; bounded-N set prediction has no mechanism for that
+edge-adjacency (the same class of failure as 2D concentric circles — a
+*relationship* the model cannot represent). This was predicted for Stage 3; it
+shows up at Stage 1.
+
+**Decision implication.** Before Stage 2 (cylinders/ellipses), address the
+architecture and metric:
+- *Architecture:* explicit connectivity/junction modeling, or the documented
+  scale-path (autoregressive "CAD-as-language" sequence generation), rather than
+  pushing bounded-N set prediction further.
+- *Metric:* add a structure-aware term (junction/corner correctness, stronger
+  over-prediction penalty) so a tangle cannot score 0.63. Render-IoU alone is
+  too forgiving for connected wireframes.
+
+Also exposed and fixed this stage: training now checkpoints every N epochs
+(a sleep killed the first run at epoch 26 with nothing saved).
+
 ### Stage 2 — Cylinders → lines + ellipses (vocabulary extension)
 - Cylinder projects to 2 silhouette lines + 2 rim **ellipses** (or elliptical
   arcs when a rim is partly hidden).
