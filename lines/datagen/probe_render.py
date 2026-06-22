@@ -20,7 +20,7 @@ import math
 import cv2
 import numpy as np
 
-from lines.primitives import Arc, Circle, Line, PrimitiveSet
+from lines.primitives import Arc, Circle, Ellipse, Line, PrimitiveSet
 
 
 def render_cv2(pset: PrimitiveSet, width: int, height: int,
@@ -36,6 +36,13 @@ def render_cv2(pset: PrimitiveSet, width: int, height: int,
                        line_width, line_type)
         elif isinstance(prim, Arc):
             _draw_arc(img, prim, line_width, line_type)
+        elif isinstance(prim, Ellipse):
+            # cv2.ellipse takes integer center + (semi_major, semi_minor) axes
+            # and rotation in DEGREES. Stage-2 Ellipse stores rotation in radians.
+            cv2.ellipse(img, _ipt(prim.center),
+                        (int(round(prim.semi_major)), int(round(prim.semi_minor))),
+                        math.degrees(prim.rotation), 0, 360, 0,
+                        line_width, line_type)
         else:
             raise TypeError(f"probe renderer cannot draw {type(prim).__name__}")
     return img
