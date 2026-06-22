@@ -1,19 +1,23 @@
 # Results scoreboard
 
-## Current champion (Stage 1, autoregressive) — boxes
+## Current champions (autoregressive)
 
-Measured on `data/test64_box` (400 held-out projected 3D boxes), strict
-primitive-F1 metric (the structurally-honest one — see `docs/best-config.md`):
+Strict primitive-F1 metric (the structurally-honest one — see
+`docs/best-config.md`). Same recipe (d=256, 5 layers, 100 epochs, 10k train)
+ships either content type:
 
-| Predictor | F1 | Exact-match | Near-match |
+| Held-out content | F1 | Exact-match | Near-match |
 |---|---|---|---|
-| classical baseline | 0.000 | 0.000 | 0.000 |
-| set predictor + structure post-process | 0.282 | n/a | n/a |
-| AR small preset (d=192, 3L, 50ep, 4k) | 0.899 | 0.642 | 0.650 |
-| **AR big preset (d=256, 5L, 100ep, 10k) — Stage 1 ship config** | **0.980** | **0.932** | **0.932** |
+| classical baseline (boxes) | 0.000 | 0.000 | 0.000 |
+| set predictor + structure post-process (boxes) | 0.282 | n/a | n/a |
+| AR small preset (boxes) | 0.899 | 0.642 | 0.650 |
+| **AR Stage 1 boxes ship** (`data/test64_box`) | **0.980** | **0.932** | **0.932** |
+| **AR Stage 2 Unit E6 cylinders ship** (`data/test64_cyl`) | **0.995** | **0.988** | **0.988** |
 
-373/400 boxes reconstructed exactly. Trained on a free Colab T4 in ~15 min via
-[notebooks/colab_train_box.ipynb](../notebooks/colab_train_box.ipynb).
+373/400 boxes and 395/400 cylinders reconstructed exactly. Trained on a free
+Colab T4 in ~15 min each via
+[notebooks/colab_train_box.ipynb](../notebooks/colab_train_box.ipynb) — flip
+`DATA_KIND` between `'boxes'` and `'cylinders'` in cell 3.
 
 ---
 

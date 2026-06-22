@@ -11,21 +11,22 @@ optimum differs by resolution.
 
 **Strict primitive-F1 (the honest structural metric — see Unit M1 of the plan):**
 
-| Predictor on held-out boxes (`data/test64_box`) | F1 | Exact-match | Near-match |
+| Held-out content | F1 | Exact-match | Near-match |
 |---|---|---|---|
-| classical baseline | 0.000 | 0.000 | 0.000 |
-| set predictor + structure post-process (the failing approach) | 0.282 | n/a | n/a |
-| AR small preset (d=192, 3L, 50ep, 4k train) | 0.899 | 0.642 | 0.650 |
-| **AR big preset (d=256, 5L, 100ep, 10k train) — Stage 1 ship config** | **0.980** | **0.932** | **0.932** |
+| classical baseline (boxes) | 0.000 | 0.000 | 0.000 |
+| set predictor + structure post-process (the failing approach, boxes) | 0.282 | n/a | n/a |
+| AR small preset (d=192, 3L, 50ep, 4k train) — boxes | 0.899 | 0.642 | 0.650 |
+| **AR big preset (d=256, 5L, 100ep, 10k train) — Stage 1 boxes ship** | **0.980** | **0.932** | **0.932** |
+| **AR big preset — Stage 2 Unit E6 cylinders ship** | **0.995** | **0.988** | **0.988** |
 
-373 of 400 held-out boxes reconstructed *exactly* (every edge matched within
-tolerance, every type correct). Greedy decoding; beam-3 added only +0.5pp
-exact-match (negligible -- the model is confident enough that decoder strategy
-no longer matters).
+373 / 400 boxes and 395 / 400 cylinders reconstructed *exactly* on their
+respective held-out splits. Greedy decoding is sufficient at this capacity --
+beam-3 added +0.5pp on boxes and +0.0pp on cylinders.
 
 Reproduce on a Colab T4: open
-[notebooks/colab_train_box.ipynb](../notebooks/colab_train_box.ipynb) and
-`Runtime -> Run all`. ~15 min end-to-end.
+[notebooks/colab_train_box.ipynb](../notebooks/colab_train_box.ipynb), set
+`DATA_KIND` in cell 3 to `'boxes'` or `'cylinders'`, then
+`Runtime -> Restart session and run all`. ~15 min end-to-end.
 
 ---
 

@@ -132,6 +132,37 @@ This is folded permanently into `lines/eval/harness.py`.
 - **Milestone:** ellipse primitive learned end-to-end; cylinders reconstructed.
 - This is the largest single investment — it touches schema, model, and metric.
 
+#### Stage 2 Unit E6 — RESOLVED (cylinder-only ship)
+
+Same recipe as Stage 1 (d=256, 5 decoder layers, 100 epochs, 10k samples) on
+`data/train64_cyl` (3 primitives per scene: 2 silhouette lines + 1 rim ellipse).
+Held-out 400 cylinders:
+
+| Predictor | F1 | Exact-match | Near-match |
+|-----------|-----|-------------|------------|
+| classical baseline | 0.000 | 0.000 | 0.000 |
+| AR boxes (Stage 1 ship, recorded) | 0.980 | 0.932 | 0.932 |
+| **AR cylinders (Stage 2 Unit E6 ship)** | **0.995** | **0.988** | **0.988** |
+
+395 / 400 cylinders reconstructed *exactly*. Greedy decoding; beam-3 added
+**+0.000** -- the model is confident enough that decoder strategy is
+irrelevant. Stage 2 Unit E6 ships at this recipe.
+
+The empirical insight Stage 1 *predicted* and this run *confirms*: the
+difficulty of structured reconstruction scales with the **number of inter-
+primitive relationships**, not the **number of primitive types**. Cylinders
+have 3 primitives (2 corner-pairs); boxes have 9 primitives (7 shared corners).
+Cylinders are *easier*, even with the new Ellipse vocabulary, because there is
+less structural commitment to coordinate. The Ellipse extension itself worked
+end-to-end on the first try (no retry, no recipe tuning) -- the canonical-form
+rule (E1), theta quantization (E2), and SVD-based analytic rim projection (E5)
+all held up exactly as designed.
+
+What's next: Unit E7 -- one model on a mixed 50/50 boxes + cylinders training
+set, to verify the same architecture does both content types without
+catastrophic interference. Gate 4: cylinders exact >= 0.80 AND boxes exact
+within 5pp of 0.932 (so >= 0.88).
+
 ### Stage 3 — CSG features + hidden lines
 - Subtractive features: holes (cylinder − box), slots, counterbores.
 - **General hidden-line removal** (occlusion against all faces, not just
