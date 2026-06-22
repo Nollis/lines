@@ -1,13 +1,39 @@
 # Best known inference configurations
 
-Confirmed on the full 400-sample held-out test splits (`data/test{64,128}`).
-The metric is the composite primitive-match `score` (higher is better); the bar
-is the classical baseline at the same resolution.
+Confirmed on the full 400-sample held-out test splits (`data/test{64,128,test64_box}`).
 
 The auto-generated checkpoint ledger ([results.md](results.md)) scores every
 checkpoint with the *default* predictor. This page records the best *inference
 configuration* per model — threshold and refinement strategy matter, and the
 optimum differs by resolution.
+
+## Current champion: autoregressive box reconstruction
+
+**Strict primitive-F1 (the honest structural metric — see Unit M1 of the plan):**
+
+| Predictor on held-out boxes (`data/test64_box`) | F1 | Exact-match | Near-match |
+|---|---|---|---|
+| classical baseline | 0.000 | 0.000 | 0.000 |
+| set predictor + structure post-process (the failing approach) | 0.282 | n/a | n/a |
+| AR small preset (d=192, 3L, 50ep, 4k train) | 0.899 | 0.642 | 0.650 |
+| **AR big preset (d=256, 5L, 100ep, 10k train) — Stage 1 ship config** | **0.980** | **0.932** | **0.932** |
+
+373 of 400 held-out boxes reconstructed *exactly* (every edge matched within
+tolerance, every type correct). Greedy decoding; beam-3 added only +0.5pp
+exact-match (negligible -- the model is confident enough that decoder strategy
+no longer matters).
+
+Reproduce on a Colab T4: open
+[notebooks/colab_train_box.ipynb](../notebooks/colab_train_box.ipynb) and
+`Runtime -> Run all`. ~15 min end-to-end.
+
+---
+
+## Legacy (set-predictor) configurations
+
+The set-predictor architecture is superseded by autoregressive for boxes and
+structured content. These remain accurate for the 2D random / structured-2D
+splits, where the relationship-modeling gap doesn't bite.
 
 ## Headline result: the model beats the classical baseline at both resolutions
 

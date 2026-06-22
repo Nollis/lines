@@ -89,6 +89,34 @@ architecture and metric:
 Also exposed and fixed this stage: training now checkpoints every N epochs
 (a sleep killed the first run at epoch 26 with nothing saved).
 
+#### Stage 1 — RESOLVED (autoregressive recipe)
+
+The architecture-inflection above triggered the M1/A1/A2/A3 program in
+`docs/plans/2026-06-18-001-feat-structure-aware-reconstruction-plan.md`: a
+strict primitive-F1 metric (M1), a YAGNI structural post-process that was
+proven insufficient (A1, Gate 2 → architecture rewrite justified), the A2
+bake-off that picked autoregressive over vertex-graph, and A3 which built the
+training entry point and validated on a CPU dry-run before going to GPU.
+
+Final box result, GPU on free Colab T4 (~15 min), `data/test64_box` 400 held-out:
+
+| Predictor | F1 | Exact-match | Near-match |
+|-----------|-----|-------------|------------|
+| classical baseline | 0.000 | 0.000 | 0.000 |
+| set predictor + structure post-process | 0.282 | n/a | n/a |
+| AR small preset (d=192, 3L, 50ep, 4k train) | 0.899 | 0.642 | 0.650 |
+| **AR big preset (d=256, 5L, 100ep, 10k train)** | **0.980** | **0.932** | **0.932** |
+
+373 / 400 boxes reconstructed *exactly*. The bimodal failure mode (~33%
+"catastrophes") observed in the small preset is gone: exact and near are now
+equal, meaning remaining failures are genuine "one wrong edge" cases, not
+"fell off the rails entirely." Beam-3 added +0.5pp exact -- nominal; greedy
+suffices once the model has the capacity. **Stage 1 ships at this recipe.**
+
+The single empirical lesson: render-IoU-weighted mean F1 was always a partial
+truth; per-image `exact_match_rate` is the metric that matched the visual.
+This is folded permanently into `lines/eval/harness.py`.
+
 ### Stage 2 — Cylinders → lines + ellipses (vocabulary extension)
 - Cylinder projects to 2 silhouette lines + 2 rim **ellipses** (or elliptical
   arcs when a rim is partly hidden).
