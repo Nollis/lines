@@ -200,7 +200,87 @@ class Bezier:
         )
 
 
-_BY_TYPE = {"line": Line, "arc": Arc, "circle": Circle, "bezier": Bezier}
+@dataclass(frozen=True)
+class Ellipse:
+    """Axis-aligned-and-rotated ellipse stored as (center, semi-axes, rotation).
+
+    ``rotation`` is the angle (radians) of the semi-major axis from +x.
+    Five floats matches the existing ``N_PARAMS = 5`` so the autoregressive
+    model's parameter head doesn't need to grow when ellipse is added.
+
+    The same geometric ellipse admits multiple parameterizations:
+
+    * swapping (semi_major, semi_minor) and rotating by pi/2 yields the same
+      ellipse;
+    * rotating by pi yields the same ellipse (pi-symmetry).
+
+    :meth:`canonical` collapses these to a unique form (``semi_major >=
+    semi_minor`` and ``rotation in [0, pi)``) so the tokenizer always serializes
+    the same shape identically -- load-bearing for the autoregressive bet, the
+    same lesson the ``Arc`` endpoint-swap rule encoded.
+    """
+
+    center: Point
+    semi_major: float
+    semi_minor: float
+    rotation: float                # radians; angle of the semi_major axis from +x
+    type: str = "ellipse"
+
+    def to_dict(self) -> dict:
+        return {"type": "ellipse", "center": list(self.center),
+                "semi_major": self.semi_major,
+                "semi_minor": self.semi_minor,
+                "rotation": self.rotation}
+
+    @staticmethod
+    def from_dict(d: dict) -> "Ellipse":
+        return Ellipse(center=tuple(d["center"]),
+                       semi_major=float(d["semi_major"]),
+                       semi_minor=float(d["semi_minor"]),
+                       rotation=float(d["rotation"]))
+
+    def normalized(self, width: float, height: float) -> "Ellipse":
+        # square-canvas assumption, consistent with Circle's radius normalization
+        return Ellipse(center=_norm_pt(self.center, width, height),
+                       semi_major=self.semi_major / width,
+                       semi_minor=self.semi_minor / width,
+                       rotation=self.rotation)
+
+    def denormalized(self, width: float, height: float) -> "Ellipse":
+        return Ellipse(center=_denorm_pt(self.center, width, height),
+                       semi_major=self.semi_major * width,
+                       semi_minor=self.semi_minor * width,
+                       rotation=self.rotation)
+
+    def is_valid(self) -> bool:
+        return self.semi_major > _EPS and self.semi_minor > _EPS
+
+    def canonical(self) -> "Ellipse":
+        """Return the canonical representation: ``a >= b`` and ``rotation in [0, pi)``."""
+        a, b, theta = self.semi_major, self.semi_minor, self.rotation
+        if b > a:
+            a, b = b, a
+            theta = theta + math.pi / 2
+        theta = theta % math.pi
+        return Ellipse(center=self.center, semi_major=a, semi_minor=b, rotation=theta)
+
+    def approx_equal(self, other: object, tol: float = 1e-6) -> bool:
+        if not isinstance(other, Ellipse):
+            return False
+        a, b = self.canonical(), other.canonical()
+        if not _approx_point(a.center, b.center, tol):
+            return False
+        if not math.isclose(a.semi_major, b.semi_major, abs_tol=tol):
+            return False
+        if not math.isclose(a.semi_minor, b.semi_minor, abs_tol=tol):
+            return False
+        # rotation lives on a circle of period pi: distance is min(d, pi - d)
+        d_theta = abs(a.rotation - b.rotation) % math.pi
+        return min(d_theta, math.pi - d_theta) < tol
+
+
+_BY_TYPE = {"line": Line, "arc": Arc, "circle": Circle,
+            "bezier": Bezier, "ellipse": Ellipse}
 
 
 def primitive_from_dict(d: dict):
