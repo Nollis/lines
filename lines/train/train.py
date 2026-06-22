@@ -53,6 +53,7 @@ class TrainConfig:
     param_weight: float = 5.0
     render_weight: float = 1.0
     checkpoint_every: int = 5   # save model.pt every N epochs (crash/sleep safety)
+    device: str = "cpu"          # set "cuda" for GPU (A3-P1)
     seed: int = 0
 
 
@@ -118,12 +119,14 @@ def train(cfg: TrainConfig, train_dir: Path, test_dir: Path, out_dir: Path,
             n_heads=cfg.n_heads, n_decoder_layers=cfg.n_decoder_layers,
             feature_size=required_feature_size(cfg.canvas_side),
         )
+    device = torch.device(cfg.device)
+    model = model.to(device)
     crit = SetPredictionLoss(matcher=HungarianMatcher(),
                              class_weight_none=cfg.class_weight_none,
                              param_weight=cfg.param_weight,
                              render_weight=cfg.render_weight,
                              canvas_size=cfg.canvas_side,
-                             render_canvas_size=cfg.render_canvas_size)
+                             render_canvas_size=cfg.render_canvas_size).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     steps_per_epoch = max(1, math.ceil(len(train_ds) / cfg.batch_size))
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -136,6 +139,7 @@ def train(cfg: TrainConfig, train_dir: Path, test_dir: Path, out_dir: Path,
         running = 0.0
         n_batches = 0
         for images, gt_types, gt_params in loader:
+            images = images.to(device, non_blocking=True)
             logits, params = model(images)
             out = crit(logits, params, gt_types, gt_params, gt_images=images)
             opt.zero_grad()
@@ -157,7 +161,7 @@ def train(cfg: TrainConfig, train_dir: Path, test_dir: Path, out_dir: Path,
 
     # final eval against the same metric used for the baseline
     model.eval()
-    predictor = ModelPredictor(model, canvas)
+    predictor = ModelPredictor(model, canvas, device=cfg.device)
     eval_report = run_predictor(predictor, test_ds, canvas)
     log(f"\n=== Test set ({cfg.test_samples} samples, {cfg.canvas_side}x{cfg.canvas_side}) ===")
     for k in ("mean_score", "mean_render_iou", "mean_type_accuracy",
@@ -188,6 +192,7 @@ def main():
     ap.add_argument("--init-from", default=None,
                     help="warm-start from this checkpoint (e.g. a model trained "
                          "at a lower resolution); pos_embed is interpolated")
+    ap.add_argument("--device", default="cpu", help='"cpu" or "cuda"')
     args = ap.parse_args()
     cfg = TrainConfig(canvas_side=args.canvas_side,
                       epochs=args.epochs,
@@ -198,7 +203,8 @@ def main():
                       n_queries=args.n_queries,
                       param_weight=args.param_weight,
                       render_weight=args.render_weight,
-                      render_canvas_size=args.render_canvas_size)
+                      render_canvas_size=args.render_canvas_size,
+                      device=args.device)
     init_from = Path(args.init_from) if args.init_from else None
     train(cfg, Path(args.train_dir), Path(args.test_dir), Path(args.out_dir),
           init_from=init_from)

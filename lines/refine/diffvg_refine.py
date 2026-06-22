@@ -32,10 +32,10 @@ from lines.primitives import PrimitiveSet
 _MIN_BULGE = 0.02
 
 
-def _build_grid(size: int) -> torch.Tensor:
+def _build_grid(size: int, device=None) -> torch.Tensor:
     ys, xs = torch.meshgrid(
-        torch.linspace(0.5 / size, 1.0 - 0.5 / size, size),
-        torch.linspace(0.5 / size, 1.0 - 0.5 / size, size),
+        torch.linspace(0.5 / size, 1.0 - 0.5 / size, size, device=device),
+        torch.linspace(0.5 / size, 1.0 - 0.5 / size, size, device=device),
         indexing="ij",
     )
     return torch.stack([xs, ys], dim=-1)  # (H, W, 2), normalized coords
@@ -119,6 +119,7 @@ def refine_primitives(
     sigma_start_px: float = 5.0,
     render_size: int | None = None,
     n_points: int = 48,
+    device: str | torch.device = "cpu",
 ) -> PrimitiveSet:
     """Refine primitive geometry to match the input ink via gradient descent.
 
@@ -139,24 +140,25 @@ def refine_primitives(
         return PrimitiveSet([])
 
     size = render_size or canvas.width
-    grid = _build_grid(size)
+    device = torch.device(device)
+    grid = _build_grid(size, device=device)
 
     # target foreground in [0, 1] at the render resolution (1 = ink)
     target = torch.from_numpy(1.0 - image.astype(np.float32) / 255.0).unsqueeze(0).unsqueeze(0)
     if target.shape[-1] != size:
         target = F.interpolate(target, size=(size, size), mode="area")
-    target = target[0, 0]
+    target = target[0, 0].to(device)
 
     # balanced pixel weights: up-weight ink so empty is not the minimizer
     fg_frac = target.mean().clamp(1e-4, 1.0 - 1e-4)
     weight = torch.where(target > 0.5, 0.5 / fg_frac, 0.5 / (1.0 - fg_frac))
 
-    # encode each primitive to a normalized 5-vector leaf tensor
+    # encode each primitive to a normalized 5-vector leaf tensor on the target device
     type_ids, leaves = [], []
     for prim in primitives.primitives:
         t, p = encode_primitive(prim, canvas.width, canvas.height)
         type_ids.append(int(t))
-        leaves.append(torch.tensor(p, dtype=torch.float32, requires_grad=True))
+        leaves.append(torch.tensor(p, dtype=torch.float32, device=device, requires_grad=True))
 
     opt = torch.optim.Adam(leaves, lr=lr)
     for step in range(steps):
@@ -175,7 +177,7 @@ def refine_primitives(
 
     refined = []
     for tid, params in zip(type_ids, leaves):
-        prim = decode_primitive(tid, params.detach().numpy(), canvas.width, canvas.height)
+        prim = decode_primitive(tid, params.detach().cpu().numpy(), canvas.width, canvas.height)
         if prim is not None and prim.is_valid():
             refined.append(prim)
         else:
