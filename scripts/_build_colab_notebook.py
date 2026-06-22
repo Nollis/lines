@@ -46,7 +46,7 @@ cells.append(md([
 ]))
 
 cells.append(code([
-    "REPO_URL = 'https://github.com/YOUR_USER/lines.git'   # <-- edit me\n",
+    "REPO_URL = 'https://github.com/Nollis/lines.git'\n",
     "BRANCH = 'main'\n",
     "REPO_DIR = '/content/lines'\n",
     "\n",

@@ -2,10 +2,7 @@
 
 ## `colab_train_box.ipynb` — A3 box training on a free Colab T4
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YOUR_USER/lines/blob/main/notebooks/colab_train_box.ipynb)
-
-> Edit the badge URL above + the `REPO_URL` constant in cell 1 of the notebook
-> to point at your fork once you've pushed.
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Nollis/lines/blob/main/notebooks/colab_train_box.ipynb)
 
 ### One-time setup (you only do this once)
 
