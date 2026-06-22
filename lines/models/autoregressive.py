@@ -107,6 +107,83 @@ def teacher_forced_loss(model: AutoregressiveModel,
 
 
 @torch.no_grad()
+def beam_sample(model: AutoregressiveModel, image: torch.Tensor,
+                max_len: int = 128, beam_size: int = 3,
+                length_norm_alpha: float = 0.7) -> List[int]:
+    """Beam-search decoding from one image.
+
+    Returns the highest-scoring complete sequence (ends in EOS) or the highest-
+    scoring partial sequence if none finishes within ``max_len``. ``beam_size=1``
+    is exactly equivalent to greedy decoding.
+
+    Scoring is sum of log-probs, normalized by ``len ** alpha`` (Wu et al.); this
+    prevents the well-known bias toward short / early-EOS sequences when
+    beam_size > 1.
+    """
+    if beam_size < 1:
+        raise ValueError("beam_size must be >= 1")
+    model.eval()
+    device = next(model.parameters()).device
+    memory = model.encode_image(image.to(device))                # (1, S, d)
+
+    # each beam: (tokens, cum_logp, finished)
+    beams = [( [SOS], 0.0, False )]
+    finished: List[tuple] = []
+
+    for _ in range(max_len - 1):
+        # gather still-active beams; freeze the finished ones for the survivors
+        live = [b for b in beams if not b[2]]
+        if not live:
+            break
+
+        # batched forward over all live beams (one decoder pass per step)
+        max_t = max(len(b[0]) for b in live)
+        # PAD-aware batching is overkill for small beams; just pad with EOS
+        # (causal mask makes trailing tokens irrelevant for the last position)
+        in_tokens = torch.full((len(live), max_t), EOS, dtype=torch.long, device=device)
+        lengths = []
+        for i, (toks, _, _) in enumerate(live):
+            in_tokens[i, :len(toks)] = torch.tensor(toks, dtype=torch.long, device=device)
+            lengths.append(len(toks))
+        T = max_t
+        tgt = model.tok_embed(in_tokens) + model.tok_pos[:T]
+        causal = torch.triu(torch.full((T, T), float("-inf"), device=device), diagonal=1)
+        # cross-attend each beam to the same image memory
+        mem = memory.expand(len(live), -1, -1)
+        decoded = model.decoder(tgt=tgt, memory=mem, tgt_mask=causal)
+
+        candidates = []
+        for i, (toks, cum_lp, _) in enumerate(live):
+            last = lengths[i] - 1
+            logp = model.head(decoded[i, last]).log_softmax(dim=-1)        # (V,)
+            topv, topi = logp.topk(beam_size)
+            for v, idx in zip(topv.tolist(), topi.tolist()):
+                candidates.append((toks + [idx], cum_lp + v, idx == EOS))
+
+        # finished beams from this step go to the holding pool; pick top-K live for next step
+        new_live = []
+        for toks, cum_lp, is_eos in candidates:
+            if is_eos:
+                finished.append((toks, cum_lp))
+            else:
+                new_live.append((toks, cum_lp, False))
+        new_live.sort(key=lambda b: -b[1])
+        beams = new_live[:beam_size]
+        if not beams:
+            break
+
+    def _score(toks, cum_lp):
+        return cum_lp / max(1, len(toks)) ** length_norm_alpha
+
+    if finished:
+        best = max(finished, key=lambda b: _score(b[0], b[1]))
+        return best[0]
+    # no beam ended naturally -- return the best surviving partial
+    best = max(beams, key=lambda b: _score(b[0], b[1]))
+    return best[0]
+
+
+@torch.no_grad()
 def greedy_sample(model: AutoregressiveModel, image: torch.Tensor,
                   max_len: int = 128) -> List[int]:
     """Greedy autoregressive decoding from one image. Returns a token list."""

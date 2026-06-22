@@ -37,6 +37,16 @@ def run_predictor(predictor: Callable, dataset, canvas) -> dict:
         else:
             report[f"mean_{key}"] = 0.0
 
+    # per-image distribution: surfaces what mean-F1 averages away.
+    # exact = "the whole drawing reconstructed" (F1 ~ 1.0)
+    # near  = "at most ~1 wrong edge in ~10" (F1 >= 0.9)
+    n_perfect = sum(1 for s in per_sample if s["f1"] >= 0.99)
+    n_near = sum(1 for s in per_sample if s["f1"] >= 0.9)
+    report["n_perfect"] = n_perfect
+    report["n_near"] = n_near
+    report["exact_match_rate"] = n_perfect / len(per_sample) if per_sample else 0.0
+    report["near_match_rate"] = n_near / len(per_sample) if per_sample else 0.0
+
     # per-class aggregates: sum n_gt/n_pred/n_matched/type_hits/geom_error_sum
     # across the dataset, then derive rates -- not the mean-of-means, which
     # would over-weight samples with few primitives.
