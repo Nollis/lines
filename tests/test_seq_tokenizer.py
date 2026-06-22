@@ -19,7 +19,7 @@ worthless if these are wrong, so they get nailed down first.
 import pytest
 
 from lines.models.seq_tokenizer import (
-    BULGE_RANGE, COORD_TOKENS, EOS, N_BULGE, N_COORD,
+    BULGE_RANGE, COORD_TOKENS, EOS, N_BULGE, N_COORD, N_THETA,
     PAD, SOS, TYPE_TOKENS, Tokenizer, vocab_size,
 )
 from lines.primitives import Arc, Circle, Line, PrimitiveSet
@@ -36,8 +36,8 @@ def test_special_and_type_tokens_are_distinct():
 
 def test_vocab_size_accounts_for_every_class_of_token():
     n = vocab_size()
-    # 3 special + 3 type + N_COORD coord + N_BULGE bulge
-    assert n == 3 + len(TYPE_TOKENS) + N_COORD + N_BULGE
+    # 3 special + types + N_COORD coord + N_BULGE bulge + N_THETA ellipse-rotation
+    assert n == 3 + len(TYPE_TOKENS) + N_COORD + N_BULGE + N_THETA
 
 
 def test_coord_tokens_form_a_contiguous_block():

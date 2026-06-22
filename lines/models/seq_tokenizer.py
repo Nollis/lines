@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from typing import List
 
-from lines.primitives import Arc, Circle, Line, PrimitiveSet
+from lines.primitives import Arc, Circle, Ellipse, Line, PrimitiveSet
 
 # --- vocabulary ---------------------------------------------------------------
 
@@ -43,13 +43,13 @@ SOS = 0
 EOS = 1
 PAD = 2
 
-# 3 type tokens
-TYPE_TOKENS = {"line": 3, "arc": 4, "circle": 5}
+# 4 type tokens (Stage 2 adds ellipse)
+TYPE_TOKENS = {"line": 3, "arc": 4, "circle": 5, "ellipse": 6}
 _TYPE_BY_ID = {v: k for k, v in TYPE_TOKENS.items()}
 
 # 64 coord bins by default (one bin per pixel at canvas_side=64)
 N_COORD = 64
-_COORD_BASE = 6
+_COORD_BASE = 3 + len(TYPE_TOKENS)         # derived: skips specials + types
 COORD_TOKENS = list(range(_COORD_BASE, _COORD_BASE + N_COORD))
 
 # 64 bulge bins spanning [-BULGE_RANGE, BULGE_RANGE]. v1 sampler caps arc sweep
@@ -59,9 +59,17 @@ BULGE_RANGE = 2.5
 _BULGE_BASE = _COORD_BASE + N_COORD
 _BULGE_TOKENS = list(range(_BULGE_BASE, _BULGE_BASE + N_BULGE))
 
+# 64 ellipse-rotation bins spanning [0, THETA_RANGE) = [0, pi). Ellipse.canonical
+# already maps rotation into this range, so quantization is straightforward.
+import math as _math
+N_THETA = 64
+THETA_RANGE = _math.pi
+_THETA_BASE = _BULGE_BASE + N_BULGE
+_THETA_TOKENS = list(range(_THETA_BASE, _THETA_BASE + N_THETA))
+
 
 def vocab_size() -> int:
-    return 3 + len(TYPE_TOKENS) + N_COORD + N_BULGE
+    return 3 + len(TYPE_TOKENS) + N_COORD + N_BULGE + N_THETA
 
 
 # --- tokenizer ----------------------------------------------------------------
@@ -96,6 +104,20 @@ class Tokenizer:
         if idx < 0 or idx >= N_BULGE:
             raise ValueError(f"token {token} is not a bulge token")
         return -BULGE_RANGE + (idx + 0.5) * 2 * BULGE_RANGE / N_BULGE
+
+    # -- theta quantization (ellipse rotation, range [0, pi))
+    def quantize_theta(self, t: float) -> int:
+        # Ellipse.canonical maps theta into [0, pi); clamp defensively
+        clamped = float(t) % THETA_RANGE
+        idx = int(clamped * N_THETA / THETA_RANGE)
+        idx = max(0, min(idx, N_THETA - 1))
+        return _THETA_TOKENS[idx]
+
+    def dequantize_theta(self, token: int) -> float:
+        idx = token - _THETA_BASE
+        if idx < 0 or idx >= N_THETA:
+            raise ValueError(f"token {token} is not a theta token")
+        return (idx + 0.5) * THETA_RANGE / N_THETA
 
     # -- encode
     def encode(self, pset: PrimitiveSet) -> List[int]:
@@ -136,10 +158,16 @@ class Tokenizer:
                     bulge = self.dequantize_bulge(tokens[i + 5])
                     prims.append(Arc(p1=(x1, y1), p2=(x2, y2), bulge=bulge))
                     i += 6
-                else:  # circle
+                elif kind == "circle":
                     cx, cy, r = (self.dequantize_coord(t) for t in tokens[i + 1:i + 4])
                     prims.append(Circle(center=(cx, cy), radius=r))
                     i += 4
+                else:  # ellipse: TYPE_ELLIPSE cx cy a b theta (6 tokens)
+                    cx, cy, a, b = (self.dequantize_coord(t) for t in tokens[i + 1:i + 5])
+                    theta = self.dequantize_theta(tokens[i + 5])
+                    prims.append(Ellipse(center=(cx, cy), semi_major=a,
+                                         semi_minor=b, rotation=theta))
+                    i += 6
             except (ValueError, IndexError):
                 i += 1   # malformed primitive -> skip
         return PrimitiveSet([p for p in prims if p.is_valid()])
@@ -152,6 +180,8 @@ class Tokenizer:
             if prim.p2 < prim.p1:                # swap -> flip bulge
                 return Arc(p1=prim.p2, p2=prim.p1, bulge=-prim.bulge)
             return prim
+        if isinstance(prim, Ellipse):
+            return prim.canonical()
         return prim
 
     def _param_tokens(self, prim) -> list:
@@ -162,6 +192,10 @@ class Tokenizer:
             return [self.quantize_coord(prim.p1[0]), self.quantize_coord(prim.p1[1]),
                     self.quantize_coord(prim.p2[0]), self.quantize_coord(prim.p2[1]),
                     self.quantize_bulge(prim.bulge)]
+        if isinstance(prim, Ellipse):
+            return [self.quantize_coord(prim.center[0]), self.quantize_coord(prim.center[1]),
+                    self.quantize_coord(prim.semi_major), self.quantize_coord(prim.semi_minor),
+                    self.quantize_theta(prim.rotation)]
         return [self.quantize_coord(prim.center[0]), self.quantize_coord(prim.center[1]),
                 self.quantize_coord(prim.radius)]
 

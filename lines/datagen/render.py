@@ -14,7 +14,7 @@ from typing import List, Tuple
 import numpy as np
 from PIL import Image, ImageDraw
 
-from lines.primitives import Arc, Bezier, Circle, Line, PrimitiveSet
+from lines.primitives import Arc, Bezier, Circle, Ellipse, Line, PrimitiveSet
 
 Point = Tuple[float, float]
 
@@ -42,6 +42,20 @@ def flatten_primitive(prim, n: int = 64) -> List[Point]:
     if isinstance(prim, Bezier):
         p0, p1, p2, p3 = (tuple(map(float, p)) for p in prim.control_points)
         return [_cubic(p0, p1, p2, p3, t) for t in _linspace(0.0, 1.0, n)]
+
+    if isinstance(prim, Ellipse):
+        # parametric ellipse: x(t) = cx + a cos t cos θ − b sin t sin θ
+        #                    y(t) = cy + a cos t sin θ + b sin t cos θ
+        cx, cy = prim.center
+        a, b, theta = prim.semi_major, prim.semi_minor, prim.rotation
+        ca, sa = math.cos(theta), math.sin(theta)
+        pts = []
+        for t in _linspace(0.0, 2.0 * math.pi, n):
+            ct, st = math.cos(t), math.sin(t)
+            pts.append((cx + a * ct * ca - b * st * sa,
+                        cy + a * ct * sa + b * st * ca))
+        pts.append(pts[0])   # close the loop
+        return pts
 
     raise TypeError(f"cannot flatten primitive of type {type(prim).__name__}")
 
