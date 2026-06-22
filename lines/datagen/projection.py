@@ -158,15 +158,33 @@ def rotate_mesh(mesh: Mesh, R: np.ndarray) -> Mesh:
     return Mesh(vertices=mesh.vertices @ R.T, edges=mesh.edges, faces=mesh.faces)
 
 
-def fit_segments_to_canvas(segments, canvas, margin: float = 8.0):
-    """Scale + center projected segments into the canvas (uniform scale, y down)."""
+def fit_segments_to_canvas(segments, canvas, margin: float = 8.0,
+                           randomize: bool = False, rng=None):
+    """Scale + center projected segments into the canvas (uniform scale, y down).
+
+    ``randomize=True`` (with an ``rng``) jitters both margin and offset so the
+    trained model learns translation + scale invariance.
+    """
     pts = np.array([p for seg in segments for p in seg])
     lo = pts.min(axis=0)
     hi = pts.max(axis=0)
     extent = np.maximum(hi - lo, 1e-6)
-    avail = min(canvas.width, canvas.height) - 2 * margin
-    scale = avail / extent.max()
+    if randomize and rng is not None:
+        target_frac = float(rng.uniform(0.30, 0.85))
+        scale = float(target_frac * min(canvas.width, canvas.height) / extent.max())
+        edge_margin = 2.0
+    else:
+        avail = min(canvas.width, canvas.height) - 2 * margin
+        scale = avail / extent.max()
+        edge_margin = margin
     offset = np.array([canvas.width, canvas.height]) / 2 - (lo + hi) / 2 * scale
+    if randomize and rng is not None:
+        scaled = extent * scale
+        room = np.maximum(0.0, (np.array([canvas.width, canvas.height]) - scaled) / 2 - edge_margin)
+        offset = offset + np.array([
+            float(rng.uniform(-room[0], room[0])),
+            float(rng.uniform(-room[1], room[1])),
+        ])
 
     out = []
     for p1, p2 in segments:

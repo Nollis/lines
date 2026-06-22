@@ -141,8 +141,16 @@ _MAX_FORESHORTEN = 0.95
 _MAX_TRIES = 64
 
 
-def _fit_to_canvas(primitives, canvas, margin: float = 14.0):
-    """Uniform scale + translate so all primitives sit within the canvas."""
+def _fit_to_canvas(primitives, canvas, margin: float = 14.0,
+                   randomize: bool = False, rng=None):
+    """Uniform scale + translate so all primitives sit within the canvas.
+
+    When ``randomize=True`` (and ``rng`` provided): pick a margin in [8, 24]
+    pixels, then after scaling shift the bbox center by a deterministic random
+    offset within the canvas' remaining free room. This is the spatial domain
+    randomization the reality probe demanded (translation + scale invariance
+    have to be *trained*, not assumed).
+    """
     pts: List[Tuple[float, float]] = []
     for prim in primitives:
         pts.extend(flatten_primitive(prim, n=64))
@@ -152,10 +160,26 @@ def _fit_to_canvas(primitives, canvas, margin: float = 14.0):
     lo = arr.min(axis=0)
     hi = arr.max(axis=0)
     extent = np.maximum(hi - lo, 1e-6)
-    avail = min(canvas.width, canvas.height) - 2 * margin
-    scale = float(avail / extent.max())
+    if randomize and rng is not None:
+        # parameterize directly by the fraction of canvas the object should
+        # fill on its longest axis -- covers the reality-probe small_scale
+        # range (0.35-0.6) by sampling [0.30, 0.85].
+        target_frac = float(rng.uniform(0.30, 0.85))
+        scale = float(target_frac * min(canvas.width, canvas.height) / extent.max())
+        edge_margin = 2.0
+    else:
+        avail = min(canvas.width, canvas.height) - 2 * margin
+        scale = float(avail / extent.max())
+        edge_margin = margin
     cx_img = canvas.width / 2 - (lo[0] + hi[0]) / 2 * scale
     cy_img = canvas.height / 2 - (lo[1] + hi[1]) / 2 * scale
+    if randomize and rng is not None:
+        scaled_w = (hi[0] - lo[0]) * scale
+        scaled_h = (hi[1] - lo[1]) * scale
+        room_x = max(0.0, (canvas.width - scaled_w) / 2 - edge_margin)
+        room_y = max(0.0, (canvas.height - scaled_h) / 2 - edge_margin)
+        cx_img += float(rng.uniform(-room_x, room_x))
+        cy_img += float(rng.uniform(-room_y, room_y))
     # y flip so the projection reads as image coords (y down)
     def _tx(p):
         x = p[0] * scale + cx_img
@@ -183,8 +207,14 @@ def _fit_to_canvas(primitives, canvas, margin: float = 14.0):
 def sample_cylinder_scene(seed: int, canvas, *,
                           radius_range: Tuple[float, float] = (0.6, 1.4),
                           height_range: Tuple[float, float] = (1.6, 3.6),
-                          margin: float = 14.0) -> PrimitiveSet:
-    """Generate one randomly-oriented cylinder, project, fit to canvas."""
+                          margin: float = 14.0,
+                          randomize_framing: bool = False) -> PrimitiveSet:
+    """Generate one randomly-oriented cylinder, project, fit to canvas.
+
+    ``randomize_framing=True`` jitters the fit-to-canvas margin and offset so
+    the trained model sees translation + scale variation (the fix the reality
+    probe demanded). Off by default to preserve existing behavior.
+    """
     rng = np.random.default_rng(seed)
     cam = Camera.looking_from(direction=(0.0, 0.0, -1.0),
                               up_hint=(0.0, 1.0, 0.0))
@@ -200,7 +230,8 @@ def sample_cylinder_scene(seed: int, canvas, *,
             continue
         prims = project_cylinder_to_primitives(axis, radius, height, cam,
                                                 cylinder_center=np.zeros(3))
-        fitted = _fit_to_canvas(prims, canvas, margin=margin)
+        fitted = _fit_to_canvas(prims, canvas, margin=margin,
+                                randomize=randomize_framing, rng=rng)
         if all(p.is_valid() for p in fitted):
             return PrimitiveSet(fitted)
     # fallback: an axis-aligned cylinder at a "nice" angle (should ~never hit)
@@ -208,4 +239,5 @@ def sample_cylinder_scene(seed: int, canvas, *,
     axis = R @ np.array([0.0, 0.0, 1.0])
     prims = project_cylinder_to_primitives(axis, 1.0, 2.0, cam,
                                             cylinder_center=np.zeros(3))
-    return PrimitiveSet(_fit_to_canvas(prims, canvas, margin=margin))
+    return PrimitiveSet(_fit_to_canvas(prims, canvas, margin=margin,
+                                        randomize=randomize_framing, rng=rng))

@@ -23,7 +23,8 @@ from lines.datagen.sampler2d import Canvas
 
 
 def build(out_dir: str, n: int, seed0: int, canvas_side: int,
-          fraction_cyl: float, randomize: bool):
+          fraction_cyl: float, randomize: bool,
+          randomize_framing: bool = False):
     canvas = Canvas(canvas_side, canvas_side)
     out = Path(out_dir)
     (out / "images").mkdir(parents=True, exist_ok=True)
@@ -36,11 +37,13 @@ def build(out_dir: str, n: int, seed0: int, canvas_side: int,
     for i in range(n):
         is_cyl = choice_rng.random() < fraction_cyl
         if is_cyl:
-            pset = sample_cylinder_scene(seed0 + 500_000 + i, canvas)
+            pset = sample_cylinder_scene(seed0 + 500_000 + i, canvas,
+                                          randomize_framing=randomize_framing)
             kind = "cylinder"
             n_cyl += 1
         else:
-            pset = sample_box_scene(seed0 + i, canvas)
+            pset = sample_box_scene(seed0 + i, canvas,
+                                     randomize_framing=randomize_framing)
             kind = "box"
         rp = (sample_render_params(np.random.default_rng([seed0 + i, 7]))
               if randomize else default_render_params())
@@ -69,9 +72,12 @@ def main():
     ap.add_argument("--fraction-cyl", type=float, default=0.5,
                     help="fraction of samples that are cylinders (rest are boxes)")
     ap.add_argument("--no-randomize", action="store_true")
+    ap.add_argument("--randomize-framing", action="store_true",
+                    help="jitter scale + offset (recommended for training data)")
     args = ap.parse_args()
     build(args.out, args.n, args.seed0, args.canvas_side,
-          args.fraction_cyl, not args.no_randomize)
+          args.fraction_cyl, not args.no_randomize,
+          randomize_framing=args.randomize_framing)
 
 
 if __name__ == "__main__":

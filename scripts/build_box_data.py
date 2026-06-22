@@ -15,13 +15,14 @@ from lines.datagen.render import render_primitives
 from lines.datagen.sampler2d import Canvas
 
 
-def build(out_dir: str, n: int, seed0: int, canvas_side: int, randomize: bool):
+def build(out_dir: str, n: int, seed0: int, canvas_side: int, randomize: bool,
+          randomize_framing: bool = False):
     canvas = Canvas(canvas_side, canvas_side)
     out = Path(out_dir)
     (out / "images").mkdir(parents=True, exist_ok=True)
     entries = []
     for i in range(n):
-        pset = sample_box_scene(seed0 + i, canvas)
+        pset = sample_box_scene(seed0 + i, canvas, randomize_framing=randomize_framing)
         rp = sample_render_params(np.random.default_rng([seed0 + i, 7])) if randomize \
             else default_render_params()
         img = render_primitives(pset, canvas_side, canvas_side,
@@ -43,8 +44,11 @@ def main():
     ap.add_argument("--seed0", type=int, default=0)
     ap.add_argument("--canvas-side", type=int, default=64)
     ap.add_argument("--no-randomize", action="store_true")
+    ap.add_argument("--randomize-framing", action="store_true",
+                    help="jitter scale + offset (recommended for training data)")
     args = ap.parse_args()
-    build(args.out, args.n, args.seed0, args.canvas_side, not args.no_randomize)
+    build(args.out, args.n, args.seed0, args.canvas_side, not args.no_randomize,
+          randomize_framing=args.randomize_framing)
 
 
 if __name__ == "__main__":
